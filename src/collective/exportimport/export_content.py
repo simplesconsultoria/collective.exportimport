@@ -1,13 +1,14 @@
 # -*- coding: utf-8 -*-
+import json
+import logging
+import os
+import tempfile
+from operator import itemgetter
+
+import pkg_resources
+import six
 from Acquisition import aq_base
 from App.config import getConfiguration
-from collective.exportimport import _
-from collective.exportimport import config
-from collective.exportimport.interfaces import IBase64BlobsMarker
-from collective.exportimport.interfaces import IMigrationMarker
-from collective.exportimport.interfaces import IPathBlobsMarker
-from collective.exportimport.interfaces import IRawRichTextMarker
-from operator import itemgetter
 from plone import api
 from plone.app.layout.viewlets.content import ContentHistoryViewlet
 from plone.i18n.normalizer.interfaces import IIDNormalizer
@@ -15,24 +16,22 @@ from plone.restapi.interfaces import ISerializeToJson
 from plone.restapi.serializer.converters import json_compatible
 from plone.uuid.interfaces import IUUID
 from Products.CMFPlone.interfaces import IPloneSiteRoot
-from Products.CMFPlone.interfaces.constrains import ENABLED
-from Products.CMFPlone.interfaces.constrains import ISelectableConstrainTypes
+from Products.CMFPlone.interfaces.constrains import ENABLED, ISelectableConstrainTypes
 from Products.CMFPlone.utils import safe_unicode
 from Products.Five import BrowserView
 from Products.Five.browser.pagetemplatefile import ViewPageTemplateFile
-from zope.component import getMultiAdapter
-from zope.component import getUtility
+from zope.component import getMultiAdapter, getUtility
 from zope.i18n import translate
-from zope.interface import alsoProvides
-from zope.interface import noLongerProvides
+from zope.interface import alsoProvides, noLongerProvides
 from zope.schema import getFields
 
-import json
-import logging
-import os
-import pkg_resources
-import six
-import tempfile
+from collective.exportimport import _, config
+from collective.exportimport.interfaces import (
+    IBase64BlobsMarker,
+    IMigrationMarker,
+    IPathBlobsMarker,
+    IRawRichTextMarker,
+)
 
 try:
     pkg_resources.get_distribution("Products.Archetypes")
@@ -65,8 +64,7 @@ except pkg_resources.DistributionNotFound:
     IRelationList = None
     HAS_RELATIONS = False
 else:
-    from z3c.relationfield.interfaces import IRelationChoice
-    from z3c.relationfield.interfaces import IRelationList
+    from z3c.relationfield.interfaces import IRelationChoice, IRelationList
 
     HAS_RELATIONS = True
 
@@ -132,7 +130,7 @@ class ExportContent(BrowserView):
 
         self.depth = int(depth)
         self.depth_options = (
-            ("-1", _(u"unlimited")),
+            ("-1", _("unlimited")),
             ("0", "0"),
             ("1", "1"),
             ("2", "2"),
@@ -147,9 +145,9 @@ class ExportContent(BrowserView):
         )
         self.include_blobs = int(include_blobs)
         self.include_blobs_options = (
-            ("0", _(u"as download urls")),
-            ("1", _(u"as base-64 encoded strings")),
-            ("2", _(u"as blob paths")),
+            ("0", _("as download urls")),
+            ("1", _("as base-64 encoded strings")),
+            ("2", _("as blob paths")),
         )
         self.include_revisions = include_revisions
         self.write_errors = write_errors or self.request.form.get("write_errors")
@@ -161,7 +159,7 @@ class ExportContent(BrowserView):
 
         if not self.portal_type:
             api.portal.show_message(
-                _(u"Select at least one type to export"), self.request
+                _("Select at least one type to export"), self.request
             )
             return self.template()
 
@@ -212,9 +210,11 @@ class ExportContent(BrowserView):
                 logger.info("Created directory to hold content: %s", directory)
 
             self.start()
+            all_paths = []
             for number, datum in enumerate(content_generator, start=1):
                 filename = "{}.json".format(number)
                 filepath = os.path.join(directory, filename)
+                all_paths.append([datum["@id"], str(filepath)])
                 with open(filepath, "w") as f:
                     json.dump(datum, f, sort_keys=True, indent=4)
             if number:
@@ -222,7 +222,10 @@ class ExportContent(BrowserView):
                     errors = {"unexported_paths": self.errors}
                     with open(os.path.join(directory, "errors.json"), "w") as f:
                         json.dump(errors, f, indent=4)
-            msg = _(u"Exported {} items ({}) to {} with {} errors").format(
+            all_paths.sort()
+            with open(os.path.join(directory, "paths.json"), "w") as f:
+                json.dump(all_paths, f, indent=4)
+            msg = _("Exported {} items ({}) to {} with {} errors").format(
                 number, ", ".join(self.portal_type), directory, len(self.errors)
             )
             logger.info(msg)
@@ -261,7 +264,7 @@ class ExportContent(BrowserView):
                         errors = {"unexported_paths": self.errors}
                         json.dump(errors, f, indent=4)
                     f.write("]")
-            msg = _(u"Exported {} items ({}) as {} to {} with {} errors").format(
+            msg = _("Exported {} items ({}) as {} to {} with {} errors").format(
                 number,
                 ", ".join(self.portal_type),
                 filename,
@@ -295,7 +298,7 @@ class ExportContent(BrowserView):
                         errors = {"unexported_paths": self.errors}
                         json.dump(errors, f, indent=4)
                     f.write("]")
-                msg = _(u"Exported {} {} with {} errors").format(
+                msg = _("Exported {} {} with {} errors").format(
                     number, self.portal_type, len(self.errors)
                 )
                 logger.info(msg)
@@ -345,7 +348,7 @@ class ExportContent(BrowserView):
         query = self.build_query()
         catalog = api.portal.get_tool("portal_catalog")
         brains = catalog.unrestrictedSearchResults(**query)
-        logger.info(u"Exporting {} {}".format(len(brains), self.portal_type))
+        logger.info("Exporting {} {}".format(len(brains), self.portal_type))
 
         # Override richtext serializer to export links using resolveuid/xxx
         alsoProvides(self.request, IRawRichTextMarker)
@@ -363,16 +366,16 @@ class ExportContent(BrowserView):
                 continue
 
             if not index % 100:
-                logger.info(u"Handled {} items...".format(index))
+                logger.info("Handled {} items...".format(index))
             try:
                 obj = brain.getObject()
             except Exception:
-                msg = u"Error getting brain {}".format(brain.getPath())
+                msg = "Error getting brain {}".format(brain.getPath())
                 self.errors.append({"path": None, "message": msg})
                 logger.exception(msg, exc_info=True)
                 continue
             if obj is None:
-                msg = u"brain.getObject() is None {}".format(brain.getPath())
+                msg = "brain.getObject() is None {}".format(brain.getPath())
                 logger.error(msg)
                 self.errors.append({"path": None, "message": msg})
                 continue
@@ -392,7 +395,7 @@ class ExportContent(BrowserView):
 
                 yield item
             except Exception:
-                msg = u"Error exporting {}".format(obj.absolute_url())
+                msg = "Error exporting {}".format(obj.absolute_url())
                 self.errors.append({"path": obj.absolute_url(), "message": msg})
                 logger.exception(msg, exc_info=True)
 
@@ -446,12 +449,12 @@ class ExportContent(BrowserView):
 
         item = self.global_dict_hook(item, obj)
         if not item:
-            logger.info(u"Skipping %s", obj.absolute_url())
+            logger.info("Skipping %s", obj.absolute_url())
             return
 
         item = self.custom_dict_hook(item, obj)
         if not item:
-            logger.info(u"Skipping %s", obj.absolute_url())
+            logger.info("Skipping %s", obj.absolute_url())
             return
 
         return item

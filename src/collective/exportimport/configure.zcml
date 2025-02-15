@@ -267,4 +267,6 @@
       permission="cmf.ManagePortal"
       />
 
+  <include package=".portal_padrao" />
+
 </configure>
