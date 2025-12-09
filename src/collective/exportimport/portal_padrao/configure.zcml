@@ -18,6 +18,7 @@
            factory=".serializers.cover.CoverJSONSerializer" />
   <adapter zcml:condition="installed collective.nitf"
            factory=".serializers.nitf.NIFTJSONSerializer" />
-  <adapter factory=".serializers.TileJSONSerializer" />
+  <adapter zcml:condition="installed collective.cover"
+           factory=".serializers.cover.TileJSONSerializer" />
 
 </configure>
