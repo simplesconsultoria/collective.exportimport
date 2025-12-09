@@ -214,16 +214,16 @@ class ExportContent(BrowserView):
             for number, datum in enumerate(content_generator, start=1):
                 filename = "{}.json".format(number)
                 filepath = os.path.join(directory, filename)
-                all_paths.append([datum["@id"], str(filepath)])
+                all_paths.append([datum["@id"], datum["UID"], str(filepath)])
                 with open(filepath, "w") as f:
                     json.dump(datum, f, sort_keys=True, indent=4)
             if number:
                 if self.errors and self.write_errors:
                     errors = {"unexported_paths": self.errors}
-                    with open(os.path.join(directory, "errors.json"), "w") as f:
+                    with open(os.path.join(config.CENTRAL_DIRECTORY, "errors.json"), "w") as f:
                         json.dump(errors, f, indent=4)
             all_paths.sort()
-            with open(os.path.join(directory, "paths.json"), "w") as f:
+            with open(os.path.join(config.CENTRAL_DIRECTORY, "export_paths.json"), "w") as f:
                 json.dump(all_paths, f, indent=4)
             msg = _("Exported {} items ({}) to {} with {} errors").format(
                 number, ", ".join(self.portal_type), directory, len(self.errors)

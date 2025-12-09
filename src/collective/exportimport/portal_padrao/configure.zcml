@@ -1,18 +1,23 @@
 <configure
     xmlns="http://namespaces.zope.org/zope"
-    xmlns:genericsetup="http://namespaces.zope.org/genericsetup"
-    xmlns:i18n="http://namespaces.zope.org/i18n"
     xmlns:browser="http://namespaces.zope.org/browser"
     xmlns:zcml="http://namespaces.zope.org/zcml"
-    xmlns:plone="http://namespaces.plone.org/plone"
     i18n_domain="collective.exportimport">
 
   <browser:page
       name="export_all"
       for="zope.interface.Interface"
-      class=".views.ExportAll"
+      class=".view.ExportAll"
       template="export_all.pt"
       permission="cmf.ManagePortal"
       />
+
+
+
+  <adapter zcml:condition="installed collective.cover"
+           factory=".serializers.cover.CoverJSONSerializer" />
+  <adapter zcml:condition="installed collective.nitf"
+           factory=".serializers.nitf.NIFTJSONSerializer" />
+  <adapter factory=".serializers.TileJSONSerializer" />
 
 </configure>
